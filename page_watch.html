@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>重点观察区 · 极值缩量战法</title>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,Roboto,'Microsoft YaHei',sans-serif;background:#0f1115;color:#e6e6e6;padding:20px;font-size:14px}
+h1{font-size:20px;margin-bottom:4px;letter-spacing:.5px}
+.nav{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.nav a{color:#8db4e8;text-decoration:none;background:#1a1d24;border:1px solid #2a2e38;padding:6px 12px;border-radius:8px;font-size:13px}
+.nav a.on{background:#2f6fed;color:#fff;border-color:#2f6fed}
+.nav a:hover{opacity:.85}
+.sub{color:#9aa0aa;font-size:12px;margin-bottom:14px;line-height:1.7}
+.sub code{background:#1e2430;padding:1px 5px;border-radius:4px;color:#8db4e8}
+.status-bar{font-size:12px;color:#4a5060;margin-bottom:10px}
+.status-bar .dot{color:#00c853;font-weight:700;margin-right:4px}
+.status-bar .dot.off{color:#ff4d4f}
+
+.sec-title{font-size:14px;color:#9aa0aa;margin:18px 0 8px;letter-spacing:.5px}
+.cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.card{background:#1a1d24;border:1px solid #2a2e38;border-radius:10px;padding:11px 14px;min-width:130px}
+.card .k{font-size:11px;color:#9aa0aa}
+.card .v{font-size:18px;font-weight:700;margin-top:4px}
+.card .s{font-size:11px;color:#6b7280;margin-top:2px}
+.card.pos{border-color:#7a3a3a}.card.neg{border-color:#2a5a2a}
+.pos{color:#ff4d4f}.neg{color:#00c853}
+
+form{background:#1a1d24;border:1px solid #2a2e38;border-radius:10px;padding:14px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.fin{background:#0f1115;border:1px solid #2a2e38;color:#e6e6e6;border-radius:8px;padding:8px 10px;font-size:14px}
+.fin label{font-size:12px;color:#9aa0aa;display:block;margin-bottom:4px}
+button{background:#2f6fed;border:1px solid #2f6fed;color:#fff;border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer}
+button:hover{opacity:.9}
+button:disabled{opacity:.4;cursor:not-allowed}
+.btn-ghost{background:transparent;border:1px solid #2a2e38;color:#9aa0aa}
+.btn-warn{background:#c44;border-color:#c44}
+.btn-warn:hover{background:#d55}
+
+table{width:100%;border-collapse:collapse;background:#1a1d24;border:1px solid #2a2e38;border-radius:10px;overflow:hidden;margin-bottom:14px}
+th,td{padding:9px 10px;font-size:13px;text-align:right;border-bottom:1px solid #222630}
+th:first-child,td:first-child{text-align:left}
+th{background:#161920;color:#9aa0aa;font-weight:600;font-size:12px}
+tbody tr:hover{background:#1a1e28}
+.code{color:#8db4e8;font-weight:600}
+.name{cursor:pointer;color:#c8d0e0;text-decoration:underline dotted}
+.name:hover{color:#8db4e8}
+.vr{font-weight:600}
+.vr.warn{color:#f5a623}
+.vr.danger{color:#ff3b30;text-shadow:0 0 6px rgba(255,59,48,.4)}
+.note{color:#6b7280;font-size:12px}
+.empty{text-align:center;color:#6b7280;padding:40px;font-size:14px}
+
+.chart-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.chart-head .ttl{font-size:13px;color:#c8d0e0}
+.chart-head .btns{display:flex;gap:6px}
+.chart-head .btns button{padding:3px 10px;font-size:12px}
+canvas{width:100%;height:220px;display:block}
+
+.period-btn{background:transparent;border:1px solid #2a2e38;color:#9aa0aa;padding:3px 10px;border-radius:6px;cursor:pointer;font-size:12px}
+.period-btn.active{background:#2f6fed;color:#fff;border-color:#2f6fed}
+.period-btn:hover:not(.active){border-color:#8db4e8;color:#c8d0e0}
+
+.stock-header{display:flex;align-items:center;padding:8px 14px;gap:10px;background:#181c25;border:1px solid #252932;border-radius:6px;margin-top:6px;font-size:12px;color:#9aa0aa;font-weight:600}
+.hd-cell{font-size:12px}
+.stock-list{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.stock-item{background:#13161e;border:1px solid #252932;border-radius:8px;overflow:hidden;margin-bottom:4px}
+.stock-row{display:flex;align-items:center;padding:10px 14px;gap:10px;font-size:13px}
+.stock-row:hover{background:#1a1e28}
+.col-code{color:#8db4e8;font-weight:600;width:90px;font-family:monospace}
+.col-name{flex:1;color:#c8d0e0;cursor:pointer}
+.col-name:hover{color:#8db4e8;text-decoration:underline dotted}
+.col-date{color:#9aa0aa;width:90px;font-family:monospace}
+.thr-cell{color:#f5a623;width:60px;font-size:12px}
+.col-price{color:#c8d0e0;width:60px;font-family:monospace;text-align:right}
+.col-pct{width:60px;text-align:right;font-family:monospace}
+.vr-cell{width:55px;text-align:right;font-family:monospace;font-weight:600}
+.t-cell{width:55px;text-align:right;font-family:monospace}
+.note-cell{flex:1;color:#6b7280;font-size:12px;padding-left:8px}
+.ctrl-cell{width:60px;text-align:right}
+.chart-panel{display:none;background:#0d1016;padding:12px 14px;border-top:1px solid #252932}
+.chart-panel.open{display:block}
+.chart-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px}
+.chart-title{color:#c8d0e0;font-weight:600}
+.chart-btns{display:flex;gap:6px;align-items:center}
+.kchart{width:100%;height:240px;display:block}
+.pos{color:#ff4d4f}.neg{color:#00c853}
+.vr.warn{color:#f5a623}.vr.danger{color:#ff3b30;text-shadow:0 0 6px rgba(255,59,48,.4)}
+.period-btn{background:transparent;border:1px solid #2a2e38;color:#9aa0aa;padding:3px 10px;border-radius:6px;cursor:pointer;font-size:12px}
+.period-btn.active{background:#2f6fed;color:#fff;border-color:#2f6fed}
+.period-btn:hover:not(.active){border-color:#8db4e8;color:#c8d0e0}
+.btn-warn{background:transparent;border:1px solid #c44;color:#f55;font-size:11px;border-radius:6px;padding:3px 8px;cursor:pointer}
+.btn-warn:hover{background:#c44;color:#fff}
+</style>
+</head>
+<body>
+<div class="nav">
+  <a href="/">🦆 老鸭头主表</a>
+  <a href="/page/watch" class="on">⭐ 重点观察区</a>
+</div>
+
+<h1>⭐ 重点观察区 · 极值缩量战法</h1>
+<div class="sub">
+  策略：盘中/盘后筛出 <b>量比&lt;0.6（温和缩量）</b> 或 <b>&lt;0.4（极度缩量）</b> 的票，持续跟踪
+  <br>查看：T+1/T+2/T+3 上涨概率 · 实时分时图 · 全市场历史缩量统计
+</div>
+
+<!-- 战法统计卡片 -->
+<div class="sec-title">📊 我的自选池 · 极值缩量战法统计</div>
+<div class="cards" id="stat-cards">
+  <div class="empty">加载中...</div>
+</div>
+
+<!-- 操作栏 -->
+<form id="add-form">
+  <div class="fin">
+    <label>代码</label>
+    <input id="inp-code" class="fin" placeholder="sz301056" style="width:110px">
+  </div>
+  <div class="fin">
+    <label>信号日(YYYYMMDD)</label>
+    <input id="inp-date" class="fin" placeholder="20260908" style="width:120px">
+  </div>
+  <div class="fin">
+    <label>当前量比</label>
+    <input id="inp-vr" class="fin" placeholder="0.35" style="width:70px">
+  </div>
+  <div class="fin">
+    <label>阈值</label>
+    <select id="inp-thr" class="fin">
+      <option value="0.6">量比 &lt; 0.6</option>
+      <option value="0.4">量比 &lt; 0.4</option>
+    </select>
+  </div>
+  <div class="fin">
+    <label>备注</label>
+    <input id="inp-note" class="fin" placeholder="缩量企稳250线" style="width:160px">
+  </div>
+  <button type="submit">➕ 加入观察</button>
+  <button type="button" class="btn-ghost" onclick="loadAll()">🔄 刷新</button>
+</form>
+
+<!-- 重点观察列表 -->
+<div class="sec-title">📋 我的观察列表（实时推送中）</div>
+<div class="stock-header">
+  <div class="hd-cell" style="width:90px">代码</div>
+  <div class="hd-cell" style="flex:1">名称</div>
+  <div class="hd-cell" style="width:90px">信号日</div>
+  <div class="hd-cell" style="width:55px;text-align:right">入场量比</div>
+  <div class="hd-cell" style="width:60px">阈值</div>
+  <div class="hd-cell" style="width:60px;text-align:right">现价</div>
+  <div class="hd-cell" style="width:60px;text-align:right">实时%</div>
+  <div class="hd-cell" style="width:55px;text-align:right">现量比</div>
+  <div class="hd-cell" style="width:55px;text-align:right">T+1%</div>
+  <div class="hd-cell" style="width:55px;text-align:right">T+2%</div>
+  <div class="hd-cell" style="width:55px;text-align:right">T+3%</div>
+  <div class="hd-cell" style="flex:1">备注</div>
+  <div class="hd-cell" style="width:60px;text-align:right">操作</div>
+</div>
+<div id="stock-list" class="stock-list"><div class="empty" style="padding:20px;text-align:center">加载中...</div></div>
+
+
+
+<div class="status-bar">
+  <span class="dot" id="rt-dot">●</span>
+  <span id="rt-text">盘中实时（每 30 秒自动刷新）</span>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let _items = [];
+
+async function loadStats() {
+  try {
+    const r = await fetch('/api/watch/stats');
+    if (!r.ok) {
+      $('stat-cards').innerHTML = '<div class="empty" style="color:#f5a623">⚠ 暂无统计数据，请运行 watch_stats.py 跑一次（盘后约 30 秒）</div>';
+      return;
+    }
+    const d = await r.json();
+    const card = (k, v, sub, cls) => `<div class="card ${cls||''}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${sub||''}</div></div>`;
+    let html = '';
+    const pool = d.pool || {};
+    const poolSize = d.pool_size || 0;
+    // 合并 0.6/0.4 两组为总池（用户要简洁）
+    const merged = {1:[], 2:[], 3:[], 5:[], 10:[]};
+    let totalSamples = 0;
+    for (const t of Object.keys(pool)) {
+      const s = pool[t];
+      if (!s) continue;
+      for (const h of [1,2,3,5,10]) {
+        const v = s[`T${h}`];
+        if (v && v.count) {
+          merged[h].push({count: v.count, win_rate: v.win_rate, mean: v.mean, median: v.median});
+          totalSamples += v.count;
+        }
+      }
+    }
+    if (totalSamples > 0) {
+      html += `<div class="sec-title" style="margin:4px 0 6px;font-size:12px;color:#8db4e8">我的自选池（${poolSize} 只）</div>`;
+      for (const h of [1, 2, 3, 5]) {
+        const arr = merged[h];
+        if (!arr.length) continue;
+        let totCount = 0, totWin = 0, meanSum = 0, medSum = 0;
+        for (const v of arr) {
+          totCount += v.count;
+          totWin += v.count * v.win_rate;
+          meanSum += v.mean * v.count;
+          medSum += v.median * v.count;
+        }
+        const wr = (totWin / totCount).toFixed(1);
+        const mean = (meanSum / totCount).toFixed(2);
+        const med = (medSum / totCount).toFixed(2);
+        const cls = parseFloat(wr) >= 50 ? 'pos' : (parseFloat(wr) < 40 ? 'neg' : '');
+        html += card(`T+${h} 胜率`, wr + '%', `均值 ${mean}% / 中位 ${med}% (n=${totCount})`, cls);
+      }
+    } else {
+      html += '<div class="empty">暂无自选 · 先在上方表单加几只要观察的票</div>';
+    }
+    $('stat-cards').innerHTML = html || '<div class="empty">无数据</div>';
+  } catch (e) {
+    $('stat-cards').innerHTML = '<div class="empty" style="color:#ff4d4f">加载失败: ' + e.message + '</div>';
+  }
+}
+
+function fmt(n) { return n === null || n === undefined ? '—' : (typeof n === 'number' ? n.toFixed(2) : n); }
+function pct(n) {
+  if (n === null || n === undefined) return '—';
+  return (n > 0 ? '+' : '') + n.toFixed(2) + '%';
+}
+function pctClass(n) { return n > 0 ? 'pos' : (n < 0 ? 'neg' : ''); }
+function vrClass(v) {
+  if (v === null || v === undefined) return '';
+  if (v < 0.4) return 'vr danger';
+  if (v < 0.6) return 'vr warn';
+  return 'vr';
+}
+
+
+
+async function delItem(id) {
+  if (!confirm('确认删除此观察？')) return;
+  await fetch('/api/watch/' + id, { method: 'DELETE' });
+  await loadWatch();
+}
+
+$('add-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const code = $('inp-code').value.trim();
+  const date = $('inp-date').value.trim() || new Date().toISOString().slice(0,10).replace(/-/g,'');
+  const vr = parseFloat($('inp-vr').value) || null;
+  const thr = parseFloat($('inp-thr').value);
+  const note = $('inp-note').value.trim();
+  if (!code) { alert('请输入代码'); return; }
+  const r = await fetch('/api/watch', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({code, date, vr, threshold: thr, note})
+  });
+  if (r.ok) {
+    $('inp-code').value = ''; $('inp-vr').value = ''; $('inp-note').value = '';
+    await loadWatch();
+  } else {
+    const j = await r.json();
+    alert('添加失败: ' + (j.error || r.status));
+  }
+});
+
+
+
+
+
+// ==================== K线图 ====================
+let _klineCache = {};  // code+period -> bars
+
+async function loadChart(itemId, code, period) {
+  const key = code + '|' + period;
+  let bars = _klineCache[key];
+  if (!bars) {
+    try {
+      const r = await fetch(`/api/kline?code=${code}&period=${period}&days=120`);
+      if (!r.ok) return;
+      const d = await r.json();
+      bars = d.bars || [];
+      _klineCache[key] = bars;
+    } catch(e) { return; }
+  }
+  drawChart(itemId, code, bars, period);
+}
+
+async function switchChart(itemId, code, period, btn) {
+  const panel = $('chart-panel-' + itemId);
+  if (!panel) return;
+  panel.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  await loadChart(itemId, code, period);
+}
+
+function toggleChart(itemId, code) {
+  const panel = $('chart-panel-' + itemId);
+  if (!panel) return;
+  // 关其他
+  document.querySelectorAll('.chart-panel.open').forEach(p => {
+    if (p !== panel) p.classList.remove('open');
+  });
+  const wasOpen = panel.classList.contains('open');
+  if (wasOpen) {
+    panel.classList.remove('open');
+  } else {
+    panel.classList.add('open');
+    // 默认日线
+    panel.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === 'daily'));
+    loadChart(itemId, code, 'daily');
+  }
+}
+
+function closeChart(itemId) {
+  const panel = $('chart-panel-' + itemId);
+  if (panel) panel.classList.remove('open');
+}
+
+function drawChart(itemId, code, bars, period) {
+  const canvas = $('chart-canvas-' + itemId);
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.offsetWidth * dpr;
+  canvas.height = 240 * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = canvas.offsetWidth, H = 240;
+  ctx.clearRect(0, 0, W, H);
+
+  const n = bars.length;
+  if (n < 2) {
+    ctx.fillStyle = '#4a5060';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('数据不足', W / 2, H / 2);
+    return;
+  }
+
+  const closes = bars.map(b => b.close);
+  const highs = bars.map(b => b.high);
+  const lows = bars.map(b => b.low);
+  const opens = bars.map(b => b.open);
+  const vols = bars.map(b => b.vol);
+
+  const priceMin = Math.min(...lows);
+  const priceMax = Math.max(...highs);
+  const pad = (priceMax - priceMin) * 0.1;
+  const pLo = priceMin - pad, pHi = priceMax + pad;
+  const volMax = Math.max(...vols);
+  const volH = 50;
+  const priceH = H - volH - 8;
+  const candleW = Math.max(2, (W - 60) / n - 1.5);
+
+  function ma(arr, p) {
+    const r = [];
+    for (let i = 0; i < arr.length; i++) {
+      if (i < p - 1) { r.push(null); continue; }
+      r.push(arr.slice(i - p + 1, i + 1).reduce((a, b) => a + b, 0) / p);
+    }
+    return r;
+  }
+  const ma5 = ma(closes, 5);
+  const ma10 = ma(closes, 10);
+  const ma60 = ma(closes, Math.min(60, Math.floor(n * 0.5)));
+  const ma250 = n >= 250 ? ma(closes, 250) : null;
+
+  function pY(v) { return priceH - (v - pLo) / (pHi - pLo) * priceH; }
+
+  // 网格
+  ctx.strokeStyle = '#1a1e28'; ctx.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    const y = Math.round(priceH * i / 3);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W - 60, y); ctx.stroke();
+  }
+
+  // K线
+  for (let i = 0; i < n; i++) {
+    const x = 2 + i * ((W - 60) / n) + candleW / 2;
+    const isUp = closes[i] >= opens[i];
+    ctx.strokeStyle = isUp ? '#ff4d4f' : '#00c853';
+    ctx.fillStyle = isUp ? '#ff4d4f' : '#00c853';
+    ctx.beginPath();
+    ctx.moveTo(x, pY(highs[i])); ctx.lineTo(x, pY(lows[i])); ctx.stroke();
+    const bodyTop = pY(Math.max(opens[i], closes[i]));
+    const bodyBot = pY(Math.min(opens[i], closes[i]));
+    ctx.fillRect(x - candleW / 2, bodyTop, candleW, Math.max(1, bodyBot - bodyTop));
+    const vh = Math.max(1, (vols[i] / volMax) * volH * 0.9);
+    ctx.fillStyle = isUp ? 'rgba(255,77,77,.35)' : 'rgba(0,200,83,.35)';
+    ctx.fillRect(x - candleW / 2, H - vh, candleW, vh);
+  }
+
+  // 均线
+  const maConfigs = [
+    [ma5, '#f5c842', 'MA5'],
+    [ma10, '#4a9eff', 'MA10'],
+    [ma60, '#ff8c00', 'MA60'],
+    [ma250, '#c060ff', 'MA250'],
+  ];
+  maConfigs.forEach(([arr, color, label]) => {
+    if (!arr) return;
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < n; i++) {
+      if (arr[i] == null) { started = false; continue; }
+      const x = 2 + i * ((W - 60) / n) + candleW / 2;
+      const y = pY(arr[i]);
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  });
+
+  // 价格坐标（顶部大值，底部小值）
+  ctx.fillStyle = '#4a5060'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) {
+    const v = pHi - (pHi - pLo) * i / 4;
+    ctx.fillText(v.toFixed(2), W - 4, Math.round(priceH * i / 4) + 3);
+  }
+
+  // 图例
+  maConfigs.forEach(([arr, color, label], idx) => {
+    if (!arr) return;
+    const x = W - 60 + 6;
+    const y = 14 + idx * 14;
+    ctx.fillStyle = color; ctx.fillRect(x, y - 6, 8, 8);
+    ctx.fillStyle = '#9aa0aa'; ctx.font = '10px monospace'; ctx.textAlign = 'left';
+    ctx.fillText(label, x + 12, y + 2);
+  });
+}
+
+async function loadWatch() {
+  try {
+    const r = await fetch('/api/watch');
+    _items = await r.json();
+    if (!_items || _items.length === 0) {
+      $('stock-list').innerHTML = '<div class="empty" style="padding:20px;text-align:center">暂无观察 · 用上方表单添加</div>';
+      return;
+    }
+    $('stock-list').innerHTML = _items.map((it) => {
+      const t1 = (it.ret||{}).T1, t2 = (it.ret||{}).T2, t3 = (it.ret||{}).T3;
+      return `<div class="stock-item" id="sitem-${it.id}">
+  <div class="stock-row" data-code="${it.code}">
+    <div class="col-code">${it.code}</div>
+    <div class="col-name" onclick="toggleChart('${it.id}','${it.code}')">${it.name||'—'}</div>
+    <div class="col-date">${it.date}</div>
+    <div class="vr-cell ${vrClass(it.vr_at_entry)}">${fmt(it.vr_at_entry)}</div>
+    <div class="thr-cell">&lt; ${it.threshold}</div>
+    <div class="col-price">${fmt(it.price)}</div>
+    <div class="col-pct ${pctClass(it.change_pct)}">${pct(it.change_pct)}</div>
+    <div class="vr-cell ${vrClass(it.vol_ratio_now)}">${fmt(it.vol_ratio_now)}</div>
+    <div class="t-cell ${pctClass(t1)}">${pct(t1)}</div>
+    <div class="t-cell ${pctClass(t2)}">${pct(t2)}</div>
+    <div class="t-cell ${pctClass(t3)}">${pct(t3)}</div>
+    <div class="note-cell">${it.note||''}</div>
+    <div class="ctrl-cell"><button class="btn-warn" onclick="delItem(${it.id})">删除</button></div>
+  </div>
+  <div class="chart-panel" id="chart-panel-${it.id}">
+    <div class="chart-toolbar">
+      <span class="chart-title">${it.name||it.code} (${it.code}) 日线走势</span>
+      <div class="chart-btns">
+        <button class="period-btn active" data-period="daily" onclick="switchChart('${it.id}','${it.code}','daily', this)">日线</button>
+        <button class="period-btn" data-period="weekly" onclick="switchChart('${it.id}','${it.code}','weekly', this)">周线</button>
+        <button class="period-btn" data-period="monthly" onclick="switchChart('${it.id}','${it.code}','monthly', this)">月线</button>
+        <button class="btn-ghost" onclick="closeChart('${it.id}')">关闭</button>
+      </div>
+    </div>
+    <canvas class="kchart" id="chart-canvas-${it.id}"></canvas>
+  </div>
+</div>`;
+    }).join('');
+  } catch (e) {
+    $('stock-list').innerHTML = '<div class="empty" style="color:#ff4d4f">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function loadAll() {
+  await Promise.all([loadStats(), loadWatch()]);
+  // 不默认展开图表，由用户点名称触发
+}
+loadAll();
+</script>
+</body>
+</html>
