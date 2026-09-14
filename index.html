@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>老鸭头战法追踪器</title>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,Roboto,'Microsoft YaHei',sans-serif;background:#0f1115;color:#e6e6e6;padding:20px;font-size:14px}
+h1{font-size:20px;margin-bottom:4px;letter-spacing:.5px}
+.sub{color:#9aa0aa;font-size:12px;margin-bottom:16px;line-height:1.7}
+.sub code{background:#1e2430;padding:1px 5px;border-radius:4px;color:#8db4e8}
+.status-bar{font-size:12px;color:#4a5060;margin-bottom:12px}
+.status-bar .dot{color:#00c853;font-weight:700;margin-right:4px}
+
+/* 统计卡片 */
+.cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}
+.card{background:#1a1d24;border:1px solid #2a2e38;border-radius:10px;padding:11px 14px;min-width:120px}
+.card .k{font-size:11px;color:#9aa0aa}
+.card .v{font-size:18px;font-weight:700;margin-top:4px}
+
+/* 表单 */
+form{background:#1a1d24;border:1px solid #2a2e38;border-radius:10px;padding:14px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.fin{background:#0f1115;border:1px solid #2a2e38;color:#e6e6e6;border-radius:8px;padding:8px 10px;font-size:14px}
+.fin label{font-size:12px;color:#9aa0aa;display:block;margin-bottom:4px}
+button{background:#2f6fed;border:1px solid #2f6fed;color:#fff;border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer}
+button:hover{opacity:.9}
+.btn-ghost{background:transparent;border:1px solid #2a2e38;color:#9aa0aa}
+
+/* 股票行 */
+.stock-item{margin-bottom:6px}
+.stock-row{display:flex;align-items:center;gap:8px;background:#161920;border:1px solid #222630;border-radius:10px;padding:10px 12px;cursor:pointer;transition:background .15s}
+.stock-row:hover{background:#1a1e28}
+.stock-row.pinned-row{border-left:3px solid #ffaa00;background:#201d0e}
+.stock-row .col-code{min-width:72px;font-weight:600;color:#8db4e8;font-size:13px}
+.stock-row .col-name{min-width:70px;color:#c8d0e0;font-size:13px;cursor:pointer;text-decoration:underline dotted}
+.col-name:hover{color:#8db4e8;text-decoration:underline}
+.stock-row .col-date{min-width:90px;color:#9aa0aa;font-size:12px}
+.stock-row .live-price{font-weight:700;font-size:15px;min-width:52px;text-align:right}
+.stock-row .live-pct{min-width:65px;text-align:right;font-size:13px}
+.stock-row .live-vs{min-width:68px;text-align:right;font-size:12px}
+.stock-row .vr-cell{min-width:48px;text-align:right;font-size:13px;font-weight:600}
+.stock-row .mktcap-cell{min-width:68px;text-align:right;font-size:13px;color:#9aa0aa}
+.stock-row .t-cell{min-width:60px;text-align:right;font-size:13px}
+.stock-row .note-cell{min-width:100px;font-size:12px;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stock-row .ctrl-cell{display:flex;align-items:center;gap:4px;min-width:200px;margin-left:auto}
+
+/* 涨跌颜色 */
+.pos{color:#ff4d4f}.neg{color:#00c853}
+.vr.warn{color:#ff9800}.vr.danger{color:#ff4d4f;font-weight:700;text-shadow:0 0 6px rgba(255,77,77,.35)}
+
+/* 状态下拉 */
+.stsel{background:#1a1d24;border:1px solid #2a2e38;color:#e6e6e6;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer}
+.stsel[data-s="观察中"]{background:#4a3500;color:#ffd080}
+.stsel[data-s="已止盈"]{background:#0a4a1a;color:#80ff90}
+.stsel[data-s="已止损"]{background:#5a1010;color:#ff7070}
+.stsel[data-s="忽略"]{background:#2a2e38;color:#888}
+
+/* 顶部导航 */
+.topnav{display:flex;gap:8px;margin-bottom:14px}
+.topnav a{color:#8db4e8;text-decoration:none;background:#1a1d24;border:1px solid #2a2e38;padding:6px 14px;border-radius:8px;font-size:13px}
+.topnav a.nav-active{background:#2f6fed;color:#fff;border-color:#2f6fed}
+
+/* ⭐观察按钮 */
+.watch-btn{background:transparent;border:1px solid #c44;color:#f55;font-size:12px;border-radius:6px;padding:3px 8px;cursor:pointer}
+.watch-btn:hover{background:#c44;color:#fff}
+.watch-btn.done{color:#888;border-color:#555;cursor:not-allowed;pointer-events:none}
+
+/* 置顶/删除按钮 */
+.pin-btn{background:transparent;border:none;cursor:pointer;font-size:15px;padding:2px;opacity:.4;transition:opacity .15s}
+.pin-btn:hover,.pin-btn.on{opacity:1}
+.del-btn{background:transparent;border:none;cursor:pointer;font-size:16px;color:#ff4d4f;opacity:.3;padding:2px;transition:opacity .15s}
+.del-btn:hover{opacity:1}
+
+/* K线图面板（内嵌到每行下方） */
+.chart-panel{display:none;background:#111418;border:1px solid #222630;border-radius:0 0 10px 10px;padding:14px 16px;margin-top:-1px}
+.chart-panel.open{display:block}
+.chart-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.chart-title{font-size:14px;font-weight:600;color:#c8d0e0;margin-right:auto}
+.chart-period-btn{background:#1e2430;border:1px solid #2a2e38;color:#9aa0aa;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer}
+.chart-period-btn.active{background:#2f6fed;border-color:#2f6fed;color:#fff}
+canvas.kchart{width:100%;height:220px;display:block;background:#0d0f14;border-radius:8px}
+
+/* 挂载的信号列表 */
+#stock-list{width:100%}
+
+/* 表头 */
+.stock-header{display:flex;align-items:center;gap:8px;padding:9px 10px;background:#1a1d24;border:1px solid #2a2e38;border-radius:10px;margin-bottom:6px;font-size:12px;color:#9aa0aa;font-weight:600}
+.stock-header > span{flex:0 0 auto;padding:0 4px}
+.stock-header .hd-price,.stock-header .hd-pct,.stock-header .hd-vs,.stock-header .hd-vr,.stock-header .hd-t{text-align:right}
+.stock-header .hd-pin{width:24px}
+.stock-header .hd-code{width:78px}
+.stock-header .hd-name{min-width:70px}
+.stock-header .hd-date{width:90px}
+.stock-header .hd-price{width:52px}
+.stock-header .hd-pct{width:70px}
+.stock-header .hd-vs{width:70px}
+.stock-header .hd-vr{width:48px}
+.stock-header .hd-mkt{width:68px;text-align:right}
+.stock-header .hd-t{width:60px}
+.stock-header .hd-note{min-width:100px;flex:0 0 100px}
+.stock-header .hd-ctrl{width:200px;text-align:right}
+.stock-item{margin-bottom:6px}
+</style>
+</head>
+<body>
+<h1>🦆 老鸭头战法追踪器</h1>
+<div class="sub">
+<div class="topnav">
+  <a href="/" class="nav-active">🦆 老鸭头主表</a>
+  <a href="/page/watch">⭐ 重点观察区</a>
+</div>
+  数据来源：本机通达信 <code>C:\new_tdx\vipdoc</code> &nbsp;|&nbsp;
+  实时行情：<span id="ws-status" class="status-bar"><span class="dot">●</span>连接中...</span>
+  &nbsp;<span style="color:#ff9800">量比 &lt; 0.6 标橙 · &lt; 0.4 标红</span>
+</div>
+
+<div class="cards" id="cards"></div>
+
+<form id="f">
+  <div>
+    <div class="fin"><label>股票代码</label>
+    <input id="code" placeholder="600519 / 300750 / sz000001" style="width:170px"></div>
+  </div>
+  <div>
+    <div class="fin"><label>信号日</label>
+    <input id="date" type="date" style="width:140px"></div>
+  </div>
+  <div>
+    <div class="fin"><label>备注（可选）</label>
+    <input id="note" placeholder="放量突破颈线 / 回踩5日线" style="width:200px"></div>
+  </div>
+  <button type="submit">＋ 记录信号</button>
+  <button type="button" class="btn-ghost" onclick="loadSignals()">↻ 重算走势</button>
+</form>
+
+<div id="stock-list">
+  <div class="stock-header">
+    <span class="hd-pin"></span>
+    <span class="hd-code">代码</span>
+    <span class="hd-name">名称</span>
+    <span class="hd-date">信号日</span>
+    <span class="hd-price">现价</span>
+    <span class="hd-pct">实时涨跌%</span>
+    <span class="hd-vs">相对信号日%</span>
+    <span class="hd-vr">量比</span>
+    <span class="hd-mkt">市值</span>
+    <span class="hd-t">次日开%</span>
+    <span class="hd-t">T+1%</span>
+    <span class="hd-t">T+3%</span>
+    <span class="hd-t">T+5%</span>
+    <span class="hd-t">T+10%</span>
+    <span class="hd-note">备注</span>
+    <span class="hd-ctrl">状态</span>
+  </div>
+</div>
+
+<script>
+// ==================== 全局状态 ====================
+let _signals = [];
+let _quotes = {};         // code -> {price, change_pct, name}
+let _openCharts = {};     // code -> {period, bars, canvasReady}
+let _socket = null;
+
+// ==================== Socket.IO 连接 ====================
+function initSocket() {
+  _socket = io('http://127.0.0.1:5001', {
+    transports: ['websocket', 'polling'],
+    reconnectionDelay: 2000
+  });
+  _socket.on('connect', () => {
+    document.getElementById('ws-status').innerHTML =
+      '<span style="color:#00c853">●</span> 已连接';
+    const send = () => {
+      const codes = [...new Set(_signals.map(s => s.code.toLowerCase().trim()))];
+      if (codes.length) _socket.emit('subscribe', { codes });
+    };
+    send();
+    setTimeout(send, 1500);
+    setTimeout(send, 5000);
+  });
+  // 保底：每 15 秒重新订阅（防前端 _signals 后加载完后忘了订）
+  setInterval(() => {
+    if (_socket && _socket.connected) {
+      const codes = [...new Set(_signals.map(s => s.code.toLowerCase().trim()))];
+      if (codes.length) _socket.emit('subscribe', { codes });
+    }
+  }, 15000);
+  _socket.on('disconnect', () => {
+    document.getElementById('ws-status').innerHTML =
+      '<span style="color:#ff4d4f">●</span> 已断开，正在重连...';
+  });
+  _socket.on('quotes', (data) => {
+    Object.assign(_quotes, data);
+    refreshLiveCells();
+  });
+  _socket.on('subscribed', (data) => {
+    // 订阅确认
+  });
+}
+
+// ==================== 格式化 ====================
+const fmt = v => v == null ? '<span class="pos" style="opacity:.35">—</span>'
+    : (v >= 0 ? `<span class="pos">+${v}%</span>` : `<span class="neg">${v}%</span>`);
+
+const fmtPct = v => v == null ? '—'
+    : (v >= 0 ? `<span class="pos">+${v}%</span>` : `<span class="neg">${v}%</span>`);
+
+function vrBadge(vr) {
+  if (vr == null) return '<span style="opacity:.35">—</span>';
+  if (vr < 0.4) return `<span class="vr danger">${vr}</span>`;
+  if (vr < 0.6) return `<span class="vr warn">${vr}</span>`;
+  return `<span style="color:#9aa0aa">${vr}</span>`;
+}
+
+function mktFmt(v) {
+  if (v == null) return '—';
+  return v >= 100 ? Math.round(v) : v.toFixed(1);
+}
+
+// ==================== 加载信号列表 ====================
+function loadSignals() {
+  fetch('/api/signals').then(r => r.json()).then(d => {
+    _signals = d.signals || [];
+    // 按置顶优先 + 信号日降序
+    _signals.sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return parseInt(String(b.date).replace(/-/g, ''))
+           - parseInt(String(a.date).replace(/-/g, ''));
+    });
+    renderStats(d.stats);
+    renderList();
+    // 订阅所有代码
+    if (_socket && _socket.connected) {
+      const codes = [...new Set(_signals.map(s => s.code.toLowerCase().trim()))];
+      if (codes.length) _socket.emit('subscribe', { codes });
+    }
+  });
+}
+
+function renderStats(s) {
+  const cEl = document.getElementById('cards');
+  const card = (k, v) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  let html = '';
+  [['next_open','次日开盘 胜/均'],['T1','T+1 胜/均'],['T3','T+3 胜/均'],
+   ['T5','T+5 胜/均'],['T10','T+10 胜/均']].forEach(([k, label]) => {
+    const st = s[k];
+    if (!st || !st.count) return;
+    const cls = st.win_rate >= 50 ? 'pos' : 'neg';
+    html += card(label, `<span class="${cls}">${st.win_rate}%</span> / ${st.mean}%`);
+  });
+  html += card('信号总数', s.total);
+  html += card('已匹配数据', s.found);
+  cEl.innerHTML = html || '<div class="card"><div class="k">暂无数据</div></div>';
+}
+
+// ==================== 渲染股票列表 ====================
+function renderList() {
+  const list = document.getElementById('stock-list');
+  // 保留表头
+  const headerHtml = list.querySelector('.stock-header') ? list.querySelector('.stock-header').outerHTML : '';
+  if (!_signals.length) {
+    list.innerHTML = headerHtml + '<div style="color:#4a5060;text-align:center;padding:40px">暂无信号记录，请在上方添加</div>';
+    return;
+  }
+  list.innerHTML = headerHtml + _signals.map(s => buildStockItem(s)).join('');
+  // 绑定事件
+  list.querySelectorAll('.stock-row').forEach(row => {
+    row.onclick = (e) => {
+      // 只点名字才展开图表
+      if (!e.target.closest('.col-name')) return;
+      if (e.target.closest('.ctrl-cell')) return;
+      toggleChart(row.dataset.code);
+    };
+  });
+  list.querySelectorAll('.pin-btn').forEach(btn => {
+    btn.onclick = () => {
+      const sid = btn.dataset.id;
+      const will = !btn.classList.contains('on');
+      fetch(`/api/signals/${sid}`, {
+        method: 'PATCH', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ pinned: will })
+      }).then(loadSignals);
+    };
+  });
+  list.querySelectorAll('.del-btn').forEach(btn => {
+    btn.onclick = () => {
+      if (!confirm('删除这条信号？')) return;
+      fetch(`/api/signals/${btn.dataset.id}`, { method: 'DELETE' }).then(loadSignals);
+    };
+  });
+  list.querySelectorAll('.stsel').forEach(sel => {
+    sel.onchange = () => {
+      fetch(`/api/signals/${sel.dataset.id}`, {
+        method: 'PATCH', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ status: sel.value })
+      });
+    };
+  });
+}
+
+function buildStockItem(s) {
+  const q = _quotes[s.code.toLowerCase().trim()] || {};
+  const price = q.price;
+  const chg = q.change_pct;
+  const sigClose = s.sig_close || 0;
+  const liveVs = (price && sigClose > 0) ? ((price / sigClose - 1) * 100).toFixed(2) : null;
+  const vr = q.vol_ratio || s.vol_ratio;  // 优先实时量比，缺则用 .day 历史
+  const pinned = s.pinned ? ' pinned-row' : '';
+  return `
+<div class="stock-item" id="item-${s.id}">
+  <div class="stock-row${pinned}" data-code="${s.code}" data-id="${s.id}" data-s="${s.status||'观察中'}">
+    <button class="pin-btn ${s.pinned?'on':''}" data-id="${s.id}" title="${s.pinned?'取消置顶':'置顶'}">${s.pinned?'📌':'📍'}</button>
+    <div class="col-code">${s.code}</div>
+    <div class="col-name">${s.name||'—'}</div>
+    <div class="col-date">${s.date}</div>
+    <div class="live-price${q.price?'':' pos'}" style="opacity:.35" data-field="price">${q.price ? q.price.toFixed(2) : '—'}</div>
+    <div class="live-pct" data-field="pct">${chg != null ? fmtPct(chg) : '<span style="opacity:.35">—</span>'}</div>
+    <div class="live-vs">${liveVs != null ? fmtPct(parseFloat(liveVs)) : '<span style="opacity:.35">—</span>'}</div>
+    <div class="vr-cell">${vrBadge(vr)}</div>
+    <div class="mktcap-cell">${mktFmt(s.mktcap)}</div>
+    <div class="t-cell">${fmt(s.next_open)}</div>
+    <div class="t-cell">${fmt(s.ret ? s.ret.T1 : null)}</div>
+    <div class="t-cell">${fmt(s.ret ? s.ret.T3 : null)}</div>
+    <div class="t-cell">${fmt(s.ret ? s.ret.T5 : null)}</div>
+    <div class="t-cell">${fmt(s.ret ? s.ret.T10 : null)}</div>
+    <div class="note-cell" title="${s.note||''}">${s.note||''}</div>
+    <div class="ctrl-cell">
+      <button class="watch-btn" data-code="${s.code}" data-name="${s.name||''}" data-vr="${vr!=null?vr:''}" data-date="${s.date}" onclick="addToWatch(this)" title="加入重点观察区">⭐观察</button>
+      <select class="stsel" data-s="${s.status||'观察中'}" data-id="${s.id}">
+        <option ${s.status==='观察中'?'selected':''}>观察中</option>
+        <option ${s.status==='已止盈'?'selected':''}>已止盈</option>
+        <option ${s.status==='已止损'?'selected':''}>已止损</option>
+        <option ${s.status==='忽略'?'selected':''}>忽略</option>
+      </select>
+      <button class="del-btn" data-id="${s.id}" title="删除">×</button>
+    </div>
+  </div>
+  <div class="chart-panel" id="chart-${s.id}">
+    <div class="chart-toolbar">
+      <span class="chart-title">📈 <span class="ct-name">${s.name||s.code}</span> <span class="ct-code">${s.code}</span> 日线走势</span>
+      <button class="chart-period-btn active" data-period="daily" onclick="switchPeriod('${s.code}','daily',this)">日线</button>
+      <button class="chart-period-btn" data-period="weekly" onclick="switchPeriod('${s.code}','weekly',this)">周线</button>
+      <button class="chart-period-btn" data-period="monthly" onclick="switchPeriod('${s.code}','monthly',this)">月线</button>
+    </div>
+    <canvas class="kchart" id="canvas-${s.id}"></canvas>
+  </div>
+</div>`;
+}
+
+// ==================== 重点观察区 ====================
+function addToWatch(el) {
+  if (el.classList.contains("done")) return;
+  var code = el.dataset.code;
+  var name = el.dataset.name;
+  var vr = parseFloat(el.dataset.vr) || null;
+  var date = el.dataset.date;
+  var thr = (vr !== null && vr < 0.4) ? 0.4 : 0.6;
+  if (!confirm("加入 ⭐ 重点观察区？\n\n代码：" + code + " " + name + "\n信号日：" + date + "\n入场量比：" + vr + "\n阈值：< " + thr)) return;
+  fetch("/api/watch", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({code: code, date: date, vr: vr, threshold: thr, note: ""})
+  }).then(function(r) {
+    if (r.ok) { alert("✅ 已加入重点观察区\n去「⭐ 重点观察区」查看"); }
+  });
+  el.classList.add("done");
+}
+
+// ==================== 实时行情刷新 ====================
+function refreshLiveCells() {
+  document.querySelectorAll('.stock-row[data-code]').forEach(row => {
+    const code = row.dataset.code.toLowerCase().trim();
+    const q = _quotes[code];
+    if (!q) return;
+    const priceEl = row.querySelector('[data-field="price"]');
+    const pctEl = row.querySelector('[data-field="pct"]');
+    if (priceEl) {
+      priceEl.textContent = q.price ? q.price.toFixed(2) : '—';
+      priceEl.style.opacity = q.price ? '1' : '.35';
+    }
+    if (pctEl) {
+      pctEl.innerHTML = q.change_pct != null ? fmtPct(q.change_pct) : '<span style="opacity:.35">—</span>';
+    }
+    // 量比
+    const vrEl = row.querySelector('.vr-cell');
+    if (vrEl) vrEl.innerHTML = vrBadge(q.vol_ratio);
+    // 实时市值
+    const mkEl = row.querySelector('.mktcap-cell');
+    if (mkEl) mkEl.textContent = q.mktcap != null ? mktFmt(q.mktcap) : '—';
+    // 实时% vs 信号日
+    const s = _signals.find(x => x.code.toLowerCase().trim() === code);
+    if (s && s.sig_close && q.price) {
+      const vs = ((q.price / s.sig_close - 1) * 100).toFixed(2);
+      // 找到 live-vs 格子
+      const vsEl = row.querySelector('.live-vs');
+      if (vsEl) vsEl.innerHTML = fmtPct(parseFloat(vs));
+    }
+  });
+}
+
+// ==================== K线图 ====================
+let _klineCache = {};  // code+period -> bars
+
+async function switchPeriod(code, period, btn) {
+  const s = _signals.find(x => x.code === code);
+  if (!s) return;
+  // 更新按钮状态
+  const panel = document.getElementById('chart-' + s.id);
+  if (!panel) return;
+  panel.querySelectorAll('.chart-period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  // 更新标题
+  const titleSpan = panel.querySelector('.chart-title');
+  const name = s.name || code;
+  titleSpan.textContent = `📈 ${name} ${period==='daily'?'日线':period==='weekly'?'周线':'月线'}走势`;
+  await loadKline(s.id, code, period);
+}
+
+async function loadKline(itemId, code, period) {
+  const key = code + '|' + period;
+  let bars = _klineCache[key];
+  if (!bars) {
+    try {
+      const r = await fetch(`/api/kline?code=${code}&period=${period}&days=120`);
+      if (!r.ok) return;
+      const d = await r.json();
+      bars = d.bars || [];
+      _klineCache[key] = bars;
+    } catch(e) { return; }
+  }
+  drawChart(itemId, code, bars, period);
+}
+
+function toggleChart(code) {
+  const s = _signals.find(x => x.code === code);
+  if (!s) return;
+  const panel = document.getElementById('chart-' + s.id);
+  if (!panel) return;
+  const isOpen = panel.classList.contains('open');
+  // 关闭其他
+  document.querySelectorAll('.chart-panel.open').forEach(p => {
+    if (p !== panel) p.classList.remove('open');
+  });
+  if (isOpen) {
+    panel.classList.remove('open');
+  } else {
+    panel.classList.add('open');
+    // 加载日线
+    const key = code + '|daily';
+    if (!_klineCache[key]) {
+      loadKline(s.id, code, 'daily');
+    } else {
+      drawChart(s.id, code, _klineCache[key], 'daily');
+    }
+  }
+}
+
+function drawChart(itemId, code, bars, period) {
+  const canvas = document.getElementById('canvas-' + itemId);
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.offsetWidth * dpr;
+  canvas.height = 220 * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = canvas.offsetWidth, H = 220;
+  ctx.clearRect(0, 0, W, H);
+
+  const n = bars.length;
+  if (n < 2) {
+    ctx.fillStyle = '#4a5060';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('数据不足', W / 2, H / 2);
+    return;
+  }
+
+  const closes = bars.map(b => b.close);
+  const highs = bars.map(b => b.high);
+  const lows = bars.map(b => b.low);
+  const opens = bars.map(b => b.open);
+  const vols = bars.map(b => b.vol);
+
+  const priceMin = Math.min(...lows);
+  const priceMax = Math.max(...highs);
+  const pad = (priceMax - priceMin) * 0.1;
+  const pLo = priceMin - pad, pHi = priceMax + pad;
+  const volMax = Math.max(...vols);
+  const volH = 50;
+  const priceH = H - volH - 8;
+  const candleW = Math.max(2, (W - 60) / n - 1.5);
+
+  // 均线函数
+  function ma(arr, period_) {
+    const r = [];
+    for (let i = 0; i < arr.length; i++) {
+      if (i < period_ - 1) { r.push(null); continue; }
+      r.push(arr.slice(i - period_ + 1, i + 1).reduce((a, b) => a + b, 0) / period_);
+    }
+    return r;
+  }
+
+  const ma5 = ma(closes, 5);
+  const ma10 = ma(closes, 10);
+  const ma60 = ma(closes, Math.min(60, Math.floor(n * 0.5)));
+  const ma250 = n >= 250 ? ma(closes, 250) : null;
+
+  function pY(v) { return priceH - (v - pLo) / (pHi - pLo) * priceH; }
+  function vY(v) { return H - (v / volMax) * volH; }
+
+  // 网格
+  ctx.strokeStyle = '#1a1e28'; ctx.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    const y = Math.round(priceH * i / 3);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W - 60, y); ctx.stroke();
+  }
+
+  // K线
+  for (let i = 0; i < n; i++) {
+    const x = 2 + i * ((W - 60) / n) + candleW / 2;
+    const isUp = closes[i] >= opens[i];
+    ctx.strokeStyle = isUp ? '#ff4d4f' : '#00c853';
+    ctx.fillStyle = isUp ? '#ff4d4f' : '#00c853';
+    ctx.beginPath();
+    ctx.moveTo(x, pY(highs[i]));
+    ctx.lineTo(x, pY(lows[i]));
+    ctx.stroke();
+    const bodyTop = pY(Math.max(opens[i], closes[i]));
+    const bodyBot = pY(Math.min(opens[i], closes[i]));
+    ctx.fillRect(x - candleW / 2, bodyTop, candleW, Math.max(1, bodyBot - bodyTop));
+    // 量
+    const vh = Math.max(1, (vols[i] / volMax) * volH * 0.9);
+    ctx.fillStyle = isUp ? 'rgba(255,77,77,.35)' : 'rgba(0,200,83,.35)';
+    ctx.fillRect(x - candleW / 2, H - vh, candleW, vh);
+  }
+
+  // 均线
+  const maConfigs = [
+    [ma5, '#f5c842', 'MA5'],
+    [ma10, '#4a9eff', 'MA10'],
+    [ma60, '#ff8c00', 'MA60'],
+    [ma250, '#c060ff', 'MA250'],
+  ];
+  maConfigs.forEach(([arr, color, label]) => {
+    if (!arr) return;
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < n; i++) {
+      if (arr[i] == null) { started = false; continue; }
+      const x = 2 + i * ((W - 60) / n) + candleW / 2;
+      const y = pY(arr[i]);
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  });
+
+  // 价格坐标
+  ctx.fillStyle = '#4a5060'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) {
+    const v = pLo + (pHi - pLo) * (4 - i) / 4;
+    ctx.fillText(v.toFixed(2), W - 4, Math.round(priceH * i / 4) + 3);
+  }
+
+  // 图例
+  maConfigs.forEach(([, color, label], idx) => {
+    if (!maConfigs[idx][0]) return;
+    const x = W - 60 + 6;
+    const y = 14 + idx * 14;
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y - 6, 8, 8);
+    ctx.fillStyle = '#9aa0aa';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(label, x + 12, y + 2);
+  });
+}
+
+// ==================== 表单 ====================
+document.getElementById('f').onsubmit = ev => {
+  ev.preventDefault();
+  const code = document.getElementById('code').value.trim();
+  const date = document.getElementById('date').value;
+  if (!code || !date) { alert('请填代码和信号日'); return; }
+  fetch('/api/signals', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ code, date, note: document.getElementById('note').value })
+  }).then(r => r.json()).then(d => {
+    if (d.error) { alert(d.error); return; }
+    document.getElementById('code').value = '';
+    document.getElementById('note').value = '';
+    _klineCache = {};  // 清除缓存，新信号重拉K线
+    loadSignals();
+  });
+};
+document.getElementById('date').value = new Date().toISOString().slice(0, 10);
+
+// ==================== 启动 ====================
+initSocket();
+loadSignals();
+</script>
+</body>
+</html>
